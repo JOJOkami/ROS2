@@ -107,8 +107,74 @@ ros2 launch learning_gazebo load_urdf_into_gazebo.launch.py
 
 这里我看到古月居老师的demo中，world参数放在了mbot节点，但是mbot.launch.py里面并没有处理这个参数，但是gazebo还是能够正常启动并成功加载了world和mbot，我猜测跟下面return中的node加载节点顺序有关，前面声明的节点参数，如果后面的节点没有声明也会被后面的节点获取
 
-验证：把57行的mbot和58行的gazebo反过来，测试发现，就加载不到world了
+- 验证：把57行的mbot和58行的gazebo反过来，测试发现，就加载不到world了
 ![图2](images/launch_mot_ret.png)
 
-改进：将world参数放到gazebo节点，和mbot独立开来，如此，无论3个节点如何颠倒，都可以加载成功
+- 改进：将world参数放到gazebo节点，和mbot独立开来，如此，无论3个节点如何颠倒，都可以加载成功
 
+- 进一步验证
+1. 创建一个test_param.py可执行文件，内容就是打印world环境变量，用test_time对照
+```
+class TestParamNode(Node):
+    def __init__(self):
+        super().__init__('test_param_node')
+
+        # 声明参数
+        self.declare_parameter('test_time', 10)  # 默认值为 10
+        self.declare_parameter('world', "test1")
+
+    def run(self):
+        # 获取参数值
+        test_time = self.get_parameter('test_time').get_parameter_value().integer_value
+        self.get_logger().info(f"参数 test_time 的值为: {test_time}")
+
+        world_path = self.get_parameter('world').get_parameter_value().string_value
+        self.get_logger().info(f"参数 world 的值为: {world_path}")
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = TestParamNode()
+    try:
+        node.run()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+2. 创建launch文件，内部创建node调用上面的py可执行文件
+```
+def generate_launch_description():
+    test_time = LaunchConfiguration('test_time')
+    world = LaunchConfiguration('world')
+
+    test_node = Node(
+        package='learning_gazebo',
+        executable='test_param',
+        name='test_node',
+        output='screen',
+        parameters=[{'use_sim_time': True, 'test_time': test_time, 'world': world}],  # Example usage
+    )
+
+    # 这里我们不设置world为参数，只设置test_time
+    return LaunchDescription([
+        DeclareLaunchArgument(
+            'test_time',
+            default_value='10',  # 默认值为 10（整数）
+            description='An integer parameter for test_time'
+        ),
+        test_node
+    ])
+```
+3. 在load_urdf_into_gazebo.launch.py中添加以下代码
+   （该py为古月ROS2 21讲的demo，git链接：https://gitee.com/guyuehome/ros2_21_tutorials.git）
+   
+![图4](images/launch_import.png)
+1. 执行命令ros2 launch learning_gazebo load_urdf_into_gazebo.launch.py 
+   
+   可以看到我们并没有传入world参数，但是打印的日志中有我们在mbot作为参数的world参数
+
+![图5](images/launch_test_ret.png)
